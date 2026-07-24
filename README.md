@@ -1,7 +1,10 @@
 # Supacell RPG — Ficha de Personagem
 
-Ficha digital da campanha Supacell RPG, com criação de personagens, progressão,
-habilidades, combate, equipamentos, poderes, necessidades e saúde corporal.
+Ficha digital do sistema Supacell RPG, com criação e gerenciamento de personagens e NPCs.
+
+## Site público
+
+https://felpinguerreiro.github.io/supacell-fichas/
 
 ## Desenvolvimento
 
@@ -10,9 +13,4 @@ npm install
 npm run dev
 ```
 
-## Publicação
-
-O workflow `Publicar no GitHub Pages` gera e publica automaticamente o site
-sempre que a branch `main` recebe uma alteração.
-
-Site: https://felpinguerreiro.github.io/supacell-fichas/
+Cada envio para a branch `main` publica automaticamente uma nova versão no GitHub Pages.

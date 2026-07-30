@@ -1,0 +1,317 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function campaign(campaignId) {
+      return get(/databases/$(database)/documents/campaigns/$(campaignId));
+    }
+
+    function campaignAfter(campaignId) {
+      return getAfter(/databases/$(database)/documents/campaigns/$(campaignId));
+    }
+
+    function member(campaignId, uid) {
+      return get(/databases/$(database)/documents/campaigns/$(campaignId)/members/$(uid));
+    }
+
+    function memberAfter(campaignId, uid) {
+      return getAfter(/databases/$(database)/documents/campaigns/$(campaignId)/members/$(uid));
+    }
+
+    function joinCode(verifier) {
+      return get(/databases/$(database)/documents/joinCodes/$(verifier));
+    }
+
+    function isCampaignOwner(campaignId) {
+      return signedIn() && campaign(campaignId).data.ownerId == request.auth.uid;
+    }
+
+    function isCampaignMember(campaignId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/campaigns/$(campaignId)/members/$(request.auth.uid));
+    }
+
+    function validCampaign(data) {
+      return data.keys().hasAll([
+          'name',
+          'normalizedName',
+          'ownerId',
+          'ownerName',
+          'createdAtMs',
+          'updatedAtMs'
+        ])
+        && data.keys().hasOnly([
+          'name',
+          'normalizedName',
+          'ownerId',
+          'ownerName',
+          'createdAtMs',
+          'updatedAtMs'
+        ])
+        && data.name is string
+        && data.name.size() >= 3
+        && data.name.size() <= 80
+        && data.normalizedName is string
+        && data.ownerId is string
+        && data.ownerName is string
+        && data.createdAtMs is number
+        && data.updatedAtMs is number;
+    }
+
+    function validMember(data, uid) {
+      return data.keys().hasAll(['uid', 'displayName', 'photoURL', 'role', 'joinedAtMs'])
+        && data.uid == uid
+        && data.displayName is string
+        && data.photoURL is string
+        && (data.role == 'mestre' || data.role == 'jogador')
+        && data.joinedAtMs is number;
+    }
+
+    function validSheet(data, campaignId, uid) {
+      return data.keys().hasAll([
+          'id',
+          'campaignId',
+          'ownerId',
+          'ownerName',
+          'sourceCharacterId',
+          'character',
+          'summary',
+          'createdAtMs',
+          'updatedAtMs'
+        ])
+        && data.id == uid
+        && data.campaignId == campaignId
+        && data.ownerId == uid
+        && data.ownerName is string
+        && data.sourceCharacterId is string
+        && data.character is map
+        && data.summary is map
+        && data.createdAtMs is number
+        && data.updatedAtMs is number;
+    }
+
+    function validMission(data) {
+      return data.keys().hasAll([
+          'title',
+          'objective',
+          'when',
+          'where',
+          'difficulty',
+          'rewards',
+          'minPlayers',
+          'maxPlayers',
+          'completed',
+          'participants',
+          'createdBy',
+          'createdAtMs',
+          'updatedAtMs'
+        ])
+        && data.keys().hasOnly([
+          'title',
+          'objective',
+          'when',
+          'where',
+          'difficulty',
+          'rewards',
+          'minPlayers',
+          'maxPlayers',
+          'completed',
+          'participants',
+          'createdBy',
+          'createdAtMs',
+          'updatedAtMs'
+        ])
+        && data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 100
+        && data.objective is string
+        && data.objective.size() > 0
+        && data.objective.size() <= 2000
+        && data.when is string
+        && data.where is string
+        && data.rewards is string
+        && data.difficulty is number
+        && data.difficulty >= 0
+        && data.difficulty <= 10
+        && data.minPlayers is number
+        && data.minPlayers >= 1
+        && data.maxPlayers is number
+        && data.maxPlayers >= data.minPlayers
+        && data.maxPlayers <= 50
+        && data.completed is bool
+        && data.participants is map
+        && data.participants.size() <= data.maxPlayers
+        && data.createdBy is string
+        && data.createdAtMs is number
+        && data.updatedAtMs is number;
+    }
+
+    function playerOnlyChangedOwnParticipation() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['participants', 'updatedAtMs'])
+        && request.resource.data.participants.diff(resource.data.participants).affectedKeys()
+          .hasOnly([request.auth.uid])
+        && request.resource.data.participants.size() <= resource.data.maxPlayers
+        && (
+          !request.resource.data.participants.keys().hasAny([request.auth.uid])
+          || (
+            request.resource.data.participants[request.auth.uid].uid == request.auth.uid
+            && request.resource.data.participants[request.auth.uid].displayName is string
+            && request.resource.data.participants[request.auth.uid].joinedAtMs is number
+          )
+        );
+    }
+
+    function validEntry(data) {
+      return data.keys().hasAll(['authorId', 'authorName', 'content', 'createdAtMs', 'updatedAtMs'])
+        && data.keys().hasOnly(['authorId', 'authorName', 'content', 'createdAtMs', 'updatedAtMs'])
+        && data.authorId == request.auth.uid
+        && data.authorName is string
+        && data.content is string
+        && data.content.size() > 0
+        && data.content.size() <= 5000
+        && data.createdAtMs is number
+        && data.updatedAtMs is number;
+    }
+
+    match /campaigns/{campaignId} {
+      allow get: if isCampaignMember(campaignId);
+      allow list: if false;
+      allow create: if signedIn()
+        && validCampaign(request.resource.data)
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isCampaignOwner(campaignId)
+        && validCampaign(request.resource.data)
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.name == resource.data.name
+        && request.resource.data.normalizedName == resource.data.normalizedName
+        && request.resource.data.createdAtMs == resource.data.createdAtMs;
+      allow delete: if false;
+
+      match /members/{uid} {
+        allow get: if signedIn() && (uid == request.auth.uid || isCampaignOwner(campaignId));
+        allow list: if isCampaignMember(campaignId);
+        allow create: if signedIn()
+          && validMember(request.resource.data, uid)
+          && (
+            (
+              uid == request.auth.uid
+              && request.resource.data.role == 'mestre'
+              && campaignAfter(campaignId).data.ownerId == request.auth.uid
+            )
+            || (
+              uid == request.auth.uid
+              && request.resource.data.role == 'jogador'
+              && request.resource.data.joinVerifier is string
+              && joinCode(request.resource.data.joinVerifier).data.campaignId == campaignId
+            )
+          );
+        allow update: if signedIn()
+          && uid == request.auth.uid
+          && validMember(request.resource.data, uid)
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.role == resource.data.role;
+        allow delete: if signedIn()
+          && uid == request.auth.uid
+          && resource.data.role == 'jogador';
+      }
+
+      match /sheets/{uid} {
+        allow get: if signedIn() && (uid == request.auth.uid || isCampaignOwner(campaignId));
+        allow list: if isCampaignOwner(campaignId);
+        allow create: if signedIn()
+          && uid == request.auth.uid
+          && isCampaignMember(campaignId)
+          && validSheet(request.resource.data, campaignId, uid);
+        allow update: if signedIn()
+          && (uid == request.auth.uid || isCampaignOwner(campaignId))
+          && validSheet(request.resource.data, campaignId, uid)
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.campaignId == resource.data.campaignId
+          && request.resource.data.createdAtMs == resource.data.createdAtMs;
+        allow delete: if signedIn() && (uid == request.auth.uid || isCampaignOwner(campaignId));
+      }
+
+      match /missions/{missionId} {
+        allow read: if isCampaignMember(campaignId);
+        allow create: if isCampaignOwner(campaignId)
+          && validMission(request.resource.data)
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update: if (
+            isCampaignOwner(campaignId)
+            && validMission(request.resource.data)
+            && request.resource.data.createdBy == resource.data.createdBy
+            && request.resource.data.createdAtMs == resource.data.createdAtMs
+          )
+          || (
+            isCampaignMember(campaignId)
+            && validMission(request.resource.data)
+            && playerOnlyChangedOwnParticipation()
+          );
+        allow delete: if false;
+
+        match /reports/{entryId} {
+          allow read: if isCampaignMember(campaignId);
+          allow create: if isCampaignMember(campaignId) && validEntry(request.resource.data);
+          allow update: if isCampaignMember(campaignId)
+            && resource.data.authorId == request.auth.uid
+            && validEntry(request.resource.data)
+            && request.resource.data.authorId == resource.data.authorId
+            && request.resource.data.createdAtMs == resource.data.createdAtMs;
+          allow delete: if false;
+        }
+
+        match /notes/{entryId} {
+          allow read: if isCampaignMember(campaignId);
+          allow create: if isCampaignMember(campaignId) && validEntry(request.resource.data);
+          allow update: if isCampaignMember(campaignId)
+            && resource.data.authorId == request.auth.uid
+            && validEntry(request.resource.data)
+            && request.resource.data.authorId == resource.data.authorId
+            && request.resource.data.createdAtMs == resource.data.createdAtMs;
+          allow delete: if false;
+        }
+      }
+    }
+
+    match /joinCodes/{verifier} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll([
+          'campaignId',
+          'campaignName',
+          'ownerId',
+          'ownerName',
+          'createdAtMs'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'campaignId',
+          'campaignName',
+          'ownerId',
+          'ownerName',
+          'createdAtMs'
+        ])
+        && request.resource.data.ownerId == request.auth.uid
+        && campaignAfter(request.resource.data.campaignId).data.ownerId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /userCampaigns/{uid}/items/{campaignId} {
+      allow read: if signedIn() && uid == request.auth.uid;
+      allow create, update: if signedIn()
+        && uid == request.auth.uid
+        && request.resource.data.role == memberAfter(campaignId, uid).data.role
+        && memberAfter(campaignId, uid).data.uid == uid;
+      allow delete: if signedIn() && uid == request.auth.uid;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

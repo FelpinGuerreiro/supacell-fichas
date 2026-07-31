@@ -1,4 +1,8 @@
 {
+  "functions": {
+    "source": "functions",
+    "codebase": "default"
+  },
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
@@ -9,7 +13,10 @@
       "firebase.json",
       ".firebaserc",
       ".git/**",
-      ".github/**"
+      ".github/**",
+      "firestore.indexes.json",
+      "firestore.rules",
+      "functions/**"
     ],
     "cleanUrls": true,
     "trailingSlash": false,

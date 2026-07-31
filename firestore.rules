@@ -22,6 +22,10 @@ service cloud.firestore {
       return getAfter(/databases/$(database)/documents/campaigns/$(campaignId)/members/$(uid));
     }
 
+    function sheet(campaignId, uid) {
+      return get(/databases/$(database)/documents/campaigns/$(campaignId)/sheets/$(uid));
+    }
+
     function joinCode(verifier) {
       return get(/databases/$(database)/documents/joinCodes/$(verifier));
     }
@@ -174,7 +178,7 @@ service cloud.firestore {
         && data.updatedAtMs is number;
     }
 
-    function playerOnlyChangedOwnParticipation() {
+    function playerOnlyChangedOwnParticipation(campaignId) {
       return request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['participants', 'updatedAtMs'])
         && request.resource.data.participants.diff(resource.data.participants).affectedKeys()
@@ -185,6 +189,8 @@ service cloud.firestore {
           || (
             request.resource.data.participants[request.auth.uid].uid == request.auth.uid
             && request.resource.data.participants[request.auth.uid].displayName is string
+            && request.resource.data.participants[request.auth.uid].displayName
+              == member(campaignId, request.auth.uid).data.displayName
             && request.resource.data.participants[request.auth.uid].joinedAtMs is number
           )
         );
@@ -200,6 +206,153 @@ service cloud.firestore {
         && data.content.size() <= 5000
         && data.createdAtMs is number
         && data.updatedAtMs is number;
+    }
+
+    function validRoll(data, campaignId, rollId) {
+      return data.keys().hasAll([
+          'id',
+          'campaignId',
+          'actorId',
+          'actorName',
+          'characterId',
+          'characterName',
+          'kind',
+          'title',
+          'attribute',
+          'mode',
+          'dice',
+          'chosenDie',
+          'attributeModifier',
+          'skillBonus',
+          'freeBonus',
+          'testPenalty',
+          'totalModifier',
+          'total',
+          'critical',
+          'damageFormula',
+          'damageDice',
+          'damageModifier',
+          'damageTotal',
+          'damageType',
+          'createdAtMs'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'campaignId',
+          'actorId',
+          'actorName',
+          'characterId',
+          'characterName',
+          'kind',
+          'title',
+          'attribute',
+          'mode',
+          'dice',
+          'chosenDie',
+          'attributeModifier',
+          'skillBonus',
+          'freeBonus',
+          'testPenalty',
+          'totalModifier',
+          'total',
+          'critical',
+          'damageFormula',
+          'damageDice',
+          'damageModifier',
+          'damageTotal',
+          'damageType',
+          'createdAtMs'
+        ])
+        && data.id == rollId
+        && data.campaignId == campaignId
+        && data.actorId == request.auth.uid
+        && data.actorName is string
+        && data.actorName.size() > 0
+        && data.actorName.size() <= 120
+        && data.actorName == sheet(campaignId, request.auth.uid).data.ownerName
+        && data.characterId is string
+        && data.characterId == sheet(campaignId, request.auth.uid).data.sourceCharacterId
+        && data.characterName is string
+        && data.characterName == sheet(campaignId, request.auth.uid).data.summary.name
+        && (data.kind == 'pericia' || data.kind == 'combate')
+        && data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 160
+        && data.attribute is string
+        && (data.mode == 'normal' || data.mode == 'vantagem' || data.mode == 'desvantagem')
+        && data.dice is list
+        && data.dice.size() >= 1
+        && data.dice.size() <= 2
+        && data.dice[0] is number
+        && data.dice[0] >= 1
+        && data.dice[0] <= 20
+        && (
+          data.dice.size() == 1
+          || (
+            data.dice[1] is number
+            && data.dice[1] >= 1
+            && data.dice[1] <= 20
+          )
+        )
+        && data.chosenDie is number
+        && data.chosenDie >= 1
+        && data.chosenDie <= 20
+        && data.attributeModifier is number
+        && data.skillBonus is number
+        && data.freeBonus is number
+        && data.testPenalty is number
+        && data.totalModifier is number
+        && data.total is number
+        && data.critical is bool
+        && data.damageFormula is string
+        && data.damageDice is list
+        && data.damageDice.size() <= 50
+        && data.damageModifier is number
+        && (data.damageTotal == null || data.damageTotal is number)
+        && data.damageType is string
+        && data.createdAtMs is number
+        && data.totalModifier
+          == data.attributeModifier
+            + data.skillBonus
+            + data.freeBonus
+            + data.testPenalty
+        && data.total == data.chosenDie + data.totalModifier
+        && (
+          (
+            data.mode == 'normal'
+            && data.dice.size() == 1
+            && data.chosenDie == data.dice[0]
+          )
+          || (
+            data.mode == 'vantagem'
+            && data.dice.size() == 2
+            && data.chosenDie >= data.dice[0]
+            && data.chosenDie >= data.dice[1]
+            && (
+              data.chosenDie == data.dice[0]
+              || data.chosenDie == data.dice[1]
+            )
+          )
+          || (
+            data.mode == 'desvantagem'
+            && data.dice.size() == 2
+            && data.chosenDie <= data.dice[0]
+            && data.chosenDie <= data.dice[1]
+            && (
+              data.chosenDie == data.dice[0]
+              || data.chosenDie == data.dice[1]
+            )
+          )
+        );
+    }
+
+    function validBan(data, uid) {
+      return data.keys().hasAll(['uid', 'displayName', 'bannedAtMs', 'bannedBy'])
+        && data.keys().hasOnly(['uid', 'displayName', 'bannedAtMs', 'bannedBy'])
+        && data.uid == uid
+        && data.displayName is string
+        && data.bannedAtMs is number
+        && data.bannedBy == request.auth.uid;
     }
 
     match /campaigns/{campaignId} {
@@ -232,6 +385,7 @@ service cloud.firestore {
               && request.resource.data.role == 'jogador'
               && request.resource.data.joinVerifier is string
               && joinCode(request.resource.data.joinVerifier).data.campaignId == campaignId
+              && !exists(/databases/$(database)/documents/campaigns/$(campaignId)/bans/$(uid))
             )
           );
         allow update: if signedIn()
@@ -240,8 +394,16 @@ service cloud.firestore {
           && request.resource.data.uid == resource.data.uid
           && request.resource.data.role == resource.data.role;
         allow delete: if signedIn()
-          && uid == request.auth.uid
-          && resource.data.role == 'jogador';
+          && resource.data.role == 'jogador'
+          && (uid == request.auth.uid || isCampaignOwner(campaignId));
+      }
+
+      match /bans/{uid} {
+        allow get: if signedIn() && (uid == request.auth.uid || isCampaignOwner(campaignId));
+        allow list: if isCampaignOwner(campaignId);
+        allow create: if isCampaignOwner(campaignId) && validBan(request.resource.data, uid);
+        allow update: if false;
+        allow delete: if isCampaignOwner(campaignId);
       }
 
       match /sheets/{uid} {
@@ -276,7 +438,7 @@ service cloud.firestore {
           || (
             isCampaignMember(campaignId)
             && validMission(request.resource.data)
-            && playerOnlyChangedOwnParticipation()
+            && playerOnlyChangedOwnParticipation(campaignId)
           );
         allow delete: if isCampaignOwner(campaignId);
 
@@ -301,6 +463,14 @@ service cloud.firestore {
             && request.resource.data.createdAtMs == resource.data.createdAtMs;
           allow delete: if isCampaignOwner(campaignId);
         }
+      }
+
+      match /rolls/{rollId} {
+        allow get, list: if isCampaignOwner(campaignId);
+        allow create: if isCampaignMember(campaignId)
+          && exists(/databases/$(database)/documents/campaigns/$(campaignId)/sheets/$(request.auth.uid))
+          && validRoll(request.resource.data, campaignId, rollId);
+        allow update, delete: if false;
       }
     }
 
@@ -333,7 +503,15 @@ service cloud.firestore {
         && uid == request.auth.uid
         && request.resource.data.role == memberAfter(campaignId, uid).data.role
         && memberAfter(campaignId, uid).data.uid == uid;
-      allow delete: if signedIn() && uid == request.auth.uid;
+      allow delete: if signedIn()
+        && (
+          uid == request.auth.uid
+          || (
+            isCampaignOwner(campaignId)
+            && resource.data.ownerId == request.auth.uid
+            && resource.data.role == 'jogador'
+          )
+        );
     }
 
     match /{document=**} {

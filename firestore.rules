@@ -81,7 +81,9 @@ service cloud.firestore {
           'character',
           'summary',
           'createdAtMs',
-          'updatedAtMs'
+          'updatedAtMs',
+          'revision',
+          'updatedBy'
         ])
         && data.id == uid
         && data.campaignId == campaignId
@@ -91,7 +93,29 @@ service cloud.firestore {
         && data.character is map
         && data.summary is map
         && data.createdAtMs is number
-        && data.updatedAtMs is number;
+        && data.updatedAtMs is number
+        && data.revision is number
+        && data.revision >= 0
+        && data.updatedBy is string;
+    }
+
+    function validSheetVersionOnCreate(data, uid) {
+      return data.revision == 0
+        && data.updatedBy == uid;
+    }
+
+    function validSheetVersionOnUpdate(data) {
+      return data.updatedBy == request.auth.uid
+        && (
+          (
+            resource.data.keys().hasAll(['revision', 'updatedBy'])
+            && data.revision == resource.data.revision + 1
+          )
+          || (
+            !resource.data.keys().hasAll(['revision', 'updatedBy'])
+            && data.revision == 1
+          )
+        );
     }
 
     function validMission(data) {
@@ -226,10 +250,12 @@ service cloud.firestore {
         allow create: if signedIn()
           && uid == request.auth.uid
           && isCampaignMember(campaignId)
-          && validSheet(request.resource.data, campaignId, uid);
+          && validSheet(request.resource.data, campaignId, uid)
+          && validSheetVersionOnCreate(request.resource.data, uid);
         allow update: if signedIn()
           && (uid == request.auth.uid || isCampaignOwner(campaignId))
           && validSheet(request.resource.data, campaignId, uid)
+          && validSheetVersionOnUpdate(request.resource.data)
           && request.resource.data.ownerId == resource.data.ownerId
           && request.resource.data.campaignId == resource.data.campaignId
           && request.resource.data.createdAtMs == resource.data.createdAtMs;
@@ -252,7 +278,7 @@ service cloud.firestore {
             && validMission(request.resource.data)
             && playerOnlyChangedOwnParticipation()
           );
-        allow delete: if false;
+        allow delete: if isCampaignOwner(campaignId);
 
         match /reports/{entryId} {
           allow read: if isCampaignMember(campaignId);
@@ -262,7 +288,7 @@ service cloud.firestore {
             && validEntry(request.resource.data)
             && request.resource.data.authorId == resource.data.authorId
             && request.resource.data.createdAtMs == resource.data.createdAtMs;
-          allow delete: if false;
+          allow delete: if isCampaignOwner(campaignId);
         }
 
         match /notes/{entryId} {
@@ -273,7 +299,7 @@ service cloud.firestore {
             && validEntry(request.resource.data)
             && request.resource.data.authorId == resource.data.authorId
             && request.resource.data.createdAtMs == resource.data.createdAtMs;
-          allow delete: if false;
+          allow delete: if isCampaignOwner(campaignId);
         }
       }
     }
